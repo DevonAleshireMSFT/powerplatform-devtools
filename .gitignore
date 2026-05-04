@@ -1,0 +1,110 @@
+# =============================================================================
+# Power Platform / PAC CLI / PowerShell Deployment Scripts
+# =============================================================================
+
+# -------------------------
+# Secrets & Environment
+# -------------------------
+*.env
+.env
+*.env.*
+secrets.json
+secrets.*.json
+appsettings.json
+appsettings.*.json
+local.settings.json
+*credentials*
+*password*
+*secret*
+service-principal.json
+
+# -------------------------
+# PAC CLI Artifacts
+# -------------------------
+# Authentication profiles (stored locally by pac auth)
+.pac/
+pac-auth.json
+
+# Solution export/extract output
+/SolutionPackager/
+*.zip
+*.msapp
+
+# PAC telemetry
+.tools/
+
+# -------------------------
+# Power Platform Solutions
+# -------------------------
+# Unpacked solution files (if not tracking these)
+# Uncomment if you do not want to track unpacked solutions:
+# /solutions/
+
+# Solution checker results
+/SolutionCheckerResult/
+*.sarif
+
+# Canvas app msapp binaries
+*.msapp
+
+# Power Automate exported flows (zip)
+*.zip
+
+# -------------------------
+# PowerShell
+# -------------------------
+# Module caches
+/Modules/
+PSGetModuleInfo.xml
+
+# Script execution transcripts/logs
+*.log
+*.transcript
+Transcript-*.txt
+
+# Pester test results
+testResults.xml
+testResults*.xml
+coverage.xml
+
+# PowerShell DSC
+*.mof
+*.meta.mof
+
+# -------------------------
+# Build & CI/CD Outputs
+# -------------------------
+out/
+dist/
+build/
+artifacts/
+drop/
+publish/
+*.nupkg
+
+# -------------------------
+# VS Code
+# -------------------------
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/*.code-workspace
+# Keep extensions.json and recommended settings if desired
+!.vscode/extensions.json
+
+# -------------------------
+# Windows
+# -------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -------------------------
+# Temporary Files
+# -------------------------
+*.tmp
+*.temp
+*.bak
+*.cache
+~$*
