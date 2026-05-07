@@ -1,5 +1,7 @@
 # powerplatform-devtools
 
+![Version](https://img.shields.io/badge/version-1.1.0-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
 Interactive PowerShell scripts for managing Power Platform solution deployments via the PAC CLI. Supports exporting, unpacking, packing, and importing solutions across Commercial, GCC, GCC High, and DoD cloud environments.
 
 ---
@@ -107,6 +109,7 @@ The script will prompt you to:
 | `-OutputZip` | `string` | Output path for the exported `.zip`. Defaults to `.\<SolutionName>.zip`. |
 | `-Managed` | `switch` | Export as a managed solution. Defaults to unmanaged. |
 | `-Unpack` | `switch` | Unpack the exported zip into a folder after export. |
+| `-NoStats` | `switch` | Suppress the usage stats summary for this run. |
 
 #### `deploy.ps1`
 
@@ -115,6 +118,68 @@ The script will prompt you to:
 | `-SolutionFolder` | `string` | Path to the unpacked solution folder. Prompted interactively if omitted. |
 | `-OutputZip` | `string` | Output path for the packed `.zip`. Defaults to `<SolutionFolder>.zip`. |
 | `-Managed` | `switch` | Pack as a managed solution. Defaults to unmanaged. |
+| `-NoStats` | `switch` | Suppress the usage stats summary for this run. |
+
+---
+
+## Usage Stats & Gamification
+
+Both scripts include a lightweight, opt-out stats feature that tracks how much time you are saving compared to doing the same action manually through the Maker Portal.
+
+After each successful run you'll see a coloured summary like this:
+
+**download.ps1**
+
+![Download stats output](docs/images/stats-download.png)
+
+**deploy.ps1**
+
+![Deploy stats output](docs/images/stats-deploy.png)
+
+### What is tracked
+
+| Metric | How it's calculated |
+|---|---|
+| **Total runs** | Incremented by 1 each execution |
+| **Avg script time** | Cumulative runtime ÷ total runs |
+| **Avg manual UI time** | Fixed baseline: 8 min (export), 12 min (import) — see assumptions below |
+| **Time saved this run** | Manual baseline − this run's elapsed time |
+| **Total time saved** | (Baseline × total runs) − cumulative script runtime |
+
+Runtime is captured _before_ the stats block runs, so the display output is never counted in the calculation.
+
+### Storage
+
+Stats are stored as small JSON files in your local user profile:
+
+```
+%LOCALAPPDATA%\powerplatform-devtools\download-stats.json
+%LOCALAPPDATA%\powerplatform-devtools\deploy-stats.json
+```
+
+The directory is created automatically on first run. No data is sent anywhere — everything stays local.
+
+### Disabling the stats feature
+
+The feature is **enabled by default**. To turn it off:
+
+| Method | How |
+|---|---|
+| **Per-run** | Pass `-NoStats` flag: `.\ download.ps1 -NoStats` |
+| **Permanently (current session)** | `$env:PPDEVTOOLS_NO_STATS = '1'` |
+| **Permanently (all sessions)** | Add `$env:PPDEVTOOLS_NO_STATS = '1'` to your PowerShell profile (`$PROFILE`) |
+| **Remove entirely** | Delete the `# ── Gamification / Usage Statistics ──` block and the 3 lines in `main` that reference `$ScriptStartTime`, `$runtimeSec`, and `Show-UsageStats` |
+
+### Manual UI time assumptions
+
+| Script | Baseline | Steps included in estimate |
+|---|---|---|
+| `download.ps1` | **8 minutes** | Navigate to make.powerapps.com → Solutions → locate solution → Export → choose type → Next → Export → wait → download zip |
+| `deploy.ps1` | **12 minutes** | Navigate → Solutions → Import Solution → upload zip → review summary → Next → Import → wait for async job → publish customizations |
+
+These are conservative estimates for a typical mid-size solution. Complex solutions or slow tenants will take longer, so actual savings are usually higher.
+
+---
 
 ### Sovereign Cloud Configuration
 
