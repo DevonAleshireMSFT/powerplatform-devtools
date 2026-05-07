@@ -19,10 +19,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - New helper functions: `Get-UsageStats`, `Save-UsageStats`, `Format-Duration`, `Show-UsageStats` — fully decoupled from main script logic.
   - Runtime is captured before the stats block so gamification output is never counted in the elapsed time calculation.
 
+### Fixed
+
+- **Security (OWASP A03 – Injection)**: `Invoke-Unpack` in `download.ps1` converted `pac solution unpack` from inline argument splatting to `& pac @pacArgs` argument array, consistent with all other PAC CLI calls in the file.
+- **Security (OWASP A03 – Injection)**: `Invoke-Pack` in `deploy.ps1` converted `pac solution pack` from inline argument splatting to `& pac @pacArgs` argument array, consistent with all other PAC CLI calls in the file.
+
 ### Changed
 
 - `download.ps1` and `deploy.ps1` — main block now sets `$ScriptStartTime` at startup.
-- README updated with new **Usage Stats & Gamification** section, screenshots, parameter table updates (`-NoStats`), and version badge.
+- README updated with new **Usage Stats & Gamification** section, screenshots, parameter table updates (`-NoStats`), version badge, and fully rewritten **Security Considerations** section covering OWASP A01, A03, A04, A05, and scope/limitations.
 - Added `CHANGELOG.md`.
 
 ---

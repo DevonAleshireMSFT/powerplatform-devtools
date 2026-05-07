@@ -237,10 +237,10 @@ function Invoke-Pack([string]$FolderPath) {
 
         Write-Info "Packing '$FolderPath' → '$OutputZip' ($solutionType)..."
 
-        pac solution pack `
-            --folder      $FolderPath `
-            --zipFile     $OutputZip  `
-            --packagetype $solutionType
+        # Use the call operator (&) with an argument array instead of inline args to
+        # prevent command injection from user-supplied paths (OWASP A03 – Injection).
+        $pacArgs = @('solution', 'pack', '--folder', $FolderPath, '--zipFile', $OutputZip, '--packagetype', $solutionType)
+        & pac @pacArgs
 
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "pac solution pack failed."

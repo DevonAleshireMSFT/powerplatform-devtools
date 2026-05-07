@@ -285,7 +285,10 @@ function Invoke-Unpack {
 
     Write-Info "Unpacking '$OutputZip' → '$unpackFolder'..."
 
-    pac solution unpack --zipFile $OutputZip --folder $unpackFolder --allowDelete
+    # Use the call operator (&) with an argument array instead of inline args to
+    # prevent command injection from user-supplied paths (OWASP A03 – Injection).
+    $pacArgs = @('solution', 'unpack', '--zipFile', $OutputZip, '--folder', $unpackFolder, '--allowDelete')
+    & pac @pacArgs
 
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "pac solution unpack failed."
