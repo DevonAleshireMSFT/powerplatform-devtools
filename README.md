@@ -1,5 +1,7 @@
 # powerplatform-devtools
 
+![Version](https://img.shields.io/badge/version-1.1.0-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
 Interactive PowerShell scripts for managing Power Platform solution deployments via the PAC CLI. Supports exporting, unpacking, packing, and importing solutions across Commercial, GCC, GCC High, and DoD cloud environments.
 
 ---
@@ -107,6 +109,7 @@ The script will prompt you to:
 | `-OutputZip` | `string` | Output path for the exported `.zip`. Defaults to `.\<SolutionName>.zip`. |
 | `-Managed` | `switch` | Export as a managed solution. Defaults to unmanaged. |
 | `-Unpack` | `switch` | Unpack the exported zip into a folder after export. |
+| `-NoStats` | `switch` | Suppress the usage stats summary for this run. |
 
 #### `deploy.ps1`
 
@@ -115,6 +118,68 @@ The script will prompt you to:
 | `-SolutionFolder` | `string` | Path to the unpacked solution folder. Prompted interactively if omitted. |
 | `-OutputZip` | `string` | Output path for the packed `.zip`. Defaults to `<SolutionFolder>.zip`. |
 | `-Managed` | `switch` | Pack as a managed solution. Defaults to unmanaged. |
+| `-NoStats` | `switch` | Suppress the usage stats summary for this run. |
+
+---
+
+## Usage Stats & Gamification
+
+Both scripts include a lightweight, opt-out stats feature that tracks how much time you are saving compared to doing the same action manually through the Maker Portal.
+
+After each successful run you'll see a coloured summary like this:
+
+**download.ps1**
+
+![Download stats output](docs/images/stats-download.png)
+
+**deploy.ps1**
+
+![Deploy stats output](docs/images/stats-deploy.png)
+
+### What is tracked
+
+| Metric | How it's calculated |
+|---|---|
+| **Total runs** | Incremented by 1 each execution |
+| **Avg script time** | Cumulative runtime ÷ total runs |
+| **Avg manual UI time** | Fixed baseline: 8 min (export), 12 min (import) — see assumptions below |
+| **Time saved this run** | Manual baseline − this run's elapsed time |
+| **Total time saved** | (Baseline × total runs) − cumulative script runtime |
+
+Runtime is captured _before_ the stats block runs, so the display output is never counted in the calculation.
+
+### Storage
+
+Stats are stored as small JSON files in your local user profile:
+
+```
+%LOCALAPPDATA%\powerplatform-devtools\download-stats.json
+%LOCALAPPDATA%\powerplatform-devtools\deploy-stats.json
+```
+
+The directory is created automatically on first run. No data is sent anywhere — everything stays local.
+
+### Disabling the stats feature
+
+The feature is **enabled by default**. To turn it off:
+
+| Method | How |
+|---|---|
+| **Per-run** | Pass `-NoStats` flag: `.\ download.ps1 -NoStats` |
+| **Permanently (current session)** | `$env:PPDEVTOOLS_NO_STATS = '1'` |
+| **Permanently (all sessions)** | Add `$env:PPDEVTOOLS_NO_STATS = '1'` to your PowerShell profile (`$PROFILE`) |
+| **Remove entirely** | Delete the `# ── Gamification / Usage Statistics ──` block and the 3 lines in `main` that reference `$ScriptStartTime`, `$runtimeSec`, and `Show-UsageStats` |
+
+### Manual UI time assumptions
+
+| Script | Baseline | Steps included in estimate |
+|---|---|---|
+| `download.ps1` | **8 minutes** | Navigate to make.powerapps.com → Solutions → locate solution → Export → choose type → Next → Export → wait → download zip |
+| `deploy.ps1` | **12 minutes** | Navigate → Solutions → Import Solution → upload zip → review summary → Next → Import → wait for async job → publish customizations |
+
+These are conservative estimates for a typical mid-size solution. Complex solutions or slow tenants will take longer, so actual savings are usually higher.
+
+---
 
 ### Sovereign Cloud Configuration
 
@@ -165,25 +230,85 @@ Source Environment                     Target Environment
 
 ## Security Considerations
 
-### Authentication
-- These scripts use **interactive browser-based login** via the PAC CLI. No credentials, tokens, or passwords are stored in the scripts or passed as parameters.
-- PAC CLI auth profiles are stored in the local user profile (`~/.pac/`) by the PAC CLI itself, not by these scripts. Treat that directory with appropriate filesystem permissions.
+> These scripts were reviewed against the [OWASP Top 10](https://owasp.org/www-project-top-ten/) before publication. The findings and mitigations are documented below.
 
-### Command Execution
-- All PAC CLI commands are invoked using PowerShell's **call operator (`&`) with argument arrays**, rather than `Invoke-Expression`. This prevents command injection from user-supplied inputs such as solution names, profile names, or file paths (OWASP A03 – Injection).
+---
+
+### A01 – Authentication & Credential Handling
+
+- Scripts use **interactive browser-based login** via the PAC CLI's `pac auth create` command. No credentials, tokens, or passwords are accepted as script parameters, stored in variables, or written to disk by these scripts.
+- PAC CLI auth profiles (OAuth tokens) are stored in `~/.pac/` by the PAC CLI itself, not by these scripts. Apply appropriate filesystem permissions to that directory.
+- Auth profile selection uses the integer index returned by `pac auth list`, not raw user-supplied strings, to avoid profile spoofing.
+
+---
+
+### A03 – Command Injection
+
+All PAC CLI calls use PowerShell's **call operator (`&`) with typed argument arrays** rather than `Invoke-Expression` or inline string interpolation. This ensures user-supplied values (solution names, file paths, profile names, environment IDs) are always passed as literal arguments and never interpreted by a shell parser.
+
+| Function | Script | Mitigation |
+|---|---|---|
+| `Select-AuthProfile` — `pac auth create` | Both | `& pac @pacArgs` argument array |
+| `Select-AuthProfile` — `pac auth select` | Both | Integer index only (`[int]`) |
+| `Invoke-Export` — `pac solution export` | `download.ps1` | `& pac @pacArgs` argument array |
+| `Invoke-Unpack` — `pac solution unpack` | `download.ps1` | `& pac @pacArgs` argument array |
+| `Invoke-Pack` — `pac solution pack` | `deploy.ps1` | `& pac @pacArgs` argument array |
+| `Invoke-Deploy` — `pac solution import` | `deploy.ps1` | `& pac @pacArgs` argument array |
+
+> **v1.1.0 fix:** `Invoke-Unpack` (`download.ps1`) and `Invoke-Pack` (`deploy.ps1`) previously used inline splatted arguments for PAC CLI calls with user-supplied paths. Both have been converted to argument arrays to be consistent with the rest of the scripts.
+
+---
+
+### A04 – Path Handling
+
+- Environment IDs (GUIDs) are validated against the pattern `^[0-9a-fA-F\-]{36}$` before being passed to any PAC CLI call.
+- Solution folder paths are validated with `Test-Path` and checked for the presence of `solution.xml` or `Other\Solution.xml` before use.
+- `$OutputZip` and user-supplied folder paths are **not** canonicalized or checked for path traversal sequences (e.g. `../../`). This is an accepted design constraint — these scripts are intended for use by **trusted local operators only** and are not hardened against adversarial input from untrusted sources.
+
+---
+
+### A05 – Usage Stats Storage
+
+The gamification feature writes a small JSON file to `%LOCALAPPDATA%\powerplatform-devtools\`. Key design decisions that limit risk:
+
+- **Scope**: Written to the current user's `LOCALAPPDATA`, accessible only to that user account under standard Windows filesystem permissions.
+- **Typed reads**: All values read from the JSON file are immediately cast to typed primitives (`[double]`, `[string]`) before use. A tampered or corrupt file yields reset defaults.
+- **No execution surface**: Stats file contents are never passed to any PAC CLI call, `Invoke-Expression`, or any other execution context.
+- **Non-fatal writes**: All file I/O in `Save-UsageStats` and `Get-UsageStats` is wrapped in `try/catch`. A failure silently resets to defaults and does not affect script behaviour.
+
+---
 
 ### No Secrets in Source Control
-- The `.gitignore` in this repository excludes PAC auth profiles, `.env` files, credential files, and exported solution zips. Review `.gitignore` before committing to ensure sensitive artefacts are not accidentally tracked.
+
+The `.gitignore` in this repository excludes PAC auth profiles, `.env` files, credential files, and exported solution `.zip` files. Review `.gitignore` before committing to ensure sensitive artefacts are not accidentally tracked.
+
+---
 
 ### Principle of Least Privilege
-- Use an account with the **minimum required role** on each environment (System Customizer is sufficient for most operations; System Administrator is required for some import options). Avoid using global admin credentials for routine deployments.
 
-### Limitations and Assumptions
-- These scripts are designed for **interactive use by trusted operators**. They are not hardened for use in multi-tenant SaaS scenarios or against adversarial input from untrusted sources.
-- Environment IDs (GUIDs) are validated with a regex pattern before use. Solution names and file paths are passed directly to the PAC CLI, which performs its own validation.
-- The scripts require PowerShell 7+ and PAC CLI to be installed on the machine running them. Ensure your environment meets these requirements before running in a CI/CD pipeline.
+Use an account with the **minimum required Power Platform role** on each environment:
+
+| Operation | Minimum role |
+|---|---|
+| Export solution | System Customizer |
+| Import solution (unmanaged) | System Customizer |
+| Import solution + publish | System Customizer |
+| Import managed solution | System Administrator |
+
+Avoid using global admin or tenant admin credentials for routine deployments.
+
+---
+
+### Scope and Limitations
+
+- These scripts are designed for **interactive use by trusted operators on their own machines**. They are not hardened for multi-tenant SaaS scenarios, automated pipelines with untrusted input sources, or use against adversarial environments.
+- No network calls are made by the scripts themselves. All Power Platform API communication is handled by the PAC CLI.
+- `Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` are set at the top of both scripts to surface unhandled errors immediately.
+
+---
 
 ### Reporting Issues
+
 If you discover a security concern, please open a GitHub issue or contact the repository maintainers directly rather than posting sensitive details publicly.
 
 ---

@@ -35,7 +35,9 @@
 param(
     [string] $SolutionFolder,
     [string] $OutputZip,
-    [switch] $Managed
+    [switch] $Managed,
+    # Pass -NoStats (or set $env:PPDEVTOOLS_NO_STATS = '1') to suppress the usage stats summary.
+    [switch] $NoStats
 )
 
 Set-StrictMode -Version Latest
@@ -235,10 +237,10 @@ function Invoke-Pack([string]$FolderPath) {
 
         Write-Info "Packing '$FolderPath' → '$OutputZip' ($solutionType)..."
 
-        pac solution pack `
-            --folder      $FolderPath `
-            --zipFile     $OutputZip  `
-            --packagetype $solutionType
+        # Use the call operator (&) with an argument array instead of inline args to
+        # prevent command injection from user-supplied paths (OWASP A03 – Injection).
+        $pacArgs = @('solution', 'pack', '--folder', $FolderPath, '--zipFile', $OutputZip, '--packagetype', $solutionType)
+        & pac @pacArgs
 
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "pac solution pack failed."
@@ -282,10 +284,120 @@ function Invoke-Deploy([string]$EnvId) {
     if ($publish -ine 'n') { Write-Success "Customizations published." }
 }
 
+# ── Gamification / Usage Statistics ──────────────────────────────────────────
+#
+#   WHAT  : Tracks run counts and cumulative runtime, then displays a fun stats
+#           summary at the end of each successful run.
+#   WHERE : Stats persist in a small JSON file at:
+#               $env:LOCALAPPDATA\powerplatform-devtools\deploy-stats.json
+#   HOW   : $ScriptStartTime is set in main before the core work begins.
+#           Runtime is captured before Show-UsageStats is called, so the
+#           gamification output never inflates the recorded elapsed time.
+#   OFF   : Pass -NoStats at the command line, or permanently disable by setting:
+#               $env:PPDEVTOOLS_NO_STATS = '1'
+#           To remove entirely, delete these functions and the 3 lines in main
+#           that reference $ScriptStartTime, $runtimeSec, and Show-UsageStats.
+# ─────────────────────────────────────────────────────────────────────────────
+
+function Get-UsageStats([string]$StatsFile) {
+    <#
+    .SYNOPSIS
+        Reads persisted usage stats from a local JSON file.
+    .OUTPUTS
+        Hashtable with TotalRuns, TotalRuntimeSeconds, LastRun.
+        Returns zeroed defaults if the file is absent or cannot be parsed.
+    #>
+    if (Test-Path $StatsFile) {
+        try {
+            $j = Get-Content $StatsFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            return @{
+                TotalRuns           = [double]$j.TotalRuns
+                TotalRuntimeSeconds = [double]$j.TotalRuntimeSeconds
+                LastRun             = [string]$j.LastRun
+            }
+        } catch { <# Fall through to defaults on corrupt file or missing keys #> }
+    }
+    return @{ TotalRuns = 0; TotalRuntimeSeconds = 0.0; LastRun = '' }
+}
+
+function Save-UsageStats([string]$StatsFile, [hashtable]$Stats) {
+    <#
+    .SYNOPSIS  Persists updated stats to JSON.  Non-fatal if the write fails.
+    #>
+    try {
+        $dir = Split-Path $StatsFile -Parent
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $Stats | ConvertTo-Json -Depth 3 | Set-Content $StatsFile -Encoding UTF8 -ErrorAction Stop
+    } catch { <# Best-effort — stats failure does not affect script behaviour #> }
+}
+
+function Format-Duration([double]$Seconds) {
+    <#
+    .SYNOPSIS  Formats a duration in seconds as a concise "Xm Ys" string.
+    #>
+    $m = [math]::Floor($Seconds / 60)
+    $s = [math]::Round($Seconds % 60)
+    if ($m -gt 0) { return "${m}m ${s}s" } else { return "${s}s" }
+}
+
+function Show-UsageStats {
+    <#
+    .SYNOPSIS
+        Updates stored run stats and renders a coloured summary to the console.
+    .PARAMETER RuntimeSeconds
+        Elapsed seconds for this execution.  Must be captured *before* calling
+        this function so the display time is not counted in the recorded runtime.
+    .PARAMETER StatsFile
+        Absolute path to the JSON stats file for this script.
+    .PARAMETER ManualMinutes
+        Estimated minutes the equivalent action takes through the Maker Portal UI.
+        Used to calculate time saved per run.
+    .PARAMETER ActionLabel
+        Short description of the manual action (shown in the stats output).
+    #>
+    param(
+        [double] $RuntimeSeconds,
+        [string] $StatsFile,
+        [double] $ManualMinutes,
+        [string] $ActionLabel
+    )
+
+    $stats                      = Get-UsageStats $StatsFile
+    $stats.TotalRuns           += 1
+    $stats.TotalRuntimeSeconds += $RuntimeSeconds
+    $stats.LastRun              = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+    Save-UsageStats $StatsFile $stats
+
+    $avgScriptSec  = $stats.TotalRuntimeSeconds / $stats.TotalRuns
+    $manualSec     = $ManualMinutes * 60
+    $savedThisRun  = [math]::Max(0, $manualSec - $RuntimeSeconds)
+    $totalSavedSec = [math]::Max(0, ($manualSec * $stats.TotalRuns) - $stats.TotalRuntimeSeconds)
+    $runWord       = if ($stats.TotalRuns -ne 1) { 'runs' } else { 'run' }
+    $border        = '═' * 60
+
+    Write-Host ""
+    Write-Host "  $border"                                                                                             -ForegroundColor Magenta
+    Write-Host "  🎮  Your Power Platform Dev Stats"                                                                  -ForegroundColor Magenta
+    Write-Host "  $border"                                                                                             -ForegroundColor Magenta
+    Write-Host ("  🚀  Run #{0} complete in {1}"                     -f $stats.TotalRuns, (Format-Duration $RuntimeSeconds)) -ForegroundColor Cyan
+    Write-Host ("  ⏱   Avg script time      :  {0}"                 -f (Format-Duration $avgScriptSec))              -ForegroundColor Cyan
+    Write-Host ("  🖱   Avg manual UI time   :  {0}  ({1})"         -f (Format-Duration $manualSec), $ActionLabel)   -ForegroundColor DarkYellow
+    Write-Host ("  ⏳  Time saved this run   :  {0}"                 -f (Format-Duration $savedThisRun))              -ForegroundColor Green
+    Write-Host ("  🏆  Total time saved      :  {0} across {1} {2}" -f (Format-Duration $totalSavedSec), $stats.TotalRuns, $runWord) -ForegroundColor Green
+    Write-Host ""
+    Write-Host ("  💡  Congrats! You've saved ~{0} using this script!" -f (Format-Duration $totalSavedSec))          -ForegroundColor Yellow
+    Write-Host "  $border"                                                                                             -ForegroundColor Magenta
+    Write-Host ""
+    Write-Host "  Stats file  : $StatsFile"                                                                           -ForegroundColor DarkGray
+    Write-Host "  To disable  : run with -NoStats, or set `$env:PPDEVTOOLS_NO_STATS = '1'"                           -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 Write-Host "`n  Power Platform Solution Deployment Script" -ForegroundColor Cyan
 Write-Host "  ─────────────────────────────────────────" -ForegroundColor DarkGray
+$ScriptStartTime = Get-Date   # captured early so total interactive + processing time is recorded
 
 Assert-PacCli
 Select-AuthProfile
@@ -293,6 +405,17 @@ $envId          = Select-Environment
 $SolutionFolder = Resolve-SolutionFolder
 Invoke-Pack   -FolderPath $SolutionFolder
 Invoke-Deploy -EnvId $envId
+
+# ── Usage stats (runtime captured here so gamification display is excluded from the total) ──
+$runtimeSec = ([datetime]::Now - $ScriptStartTime).TotalSeconds
+if (-not $NoStats -and $env:PPDEVTOOLS_NO_STATS -ne '1') {
+    # ManualMinutes = 12: estimated time to import a solution via the Maker Portal
+    #   (navigate → Solutions → Import solution → upload zip → review → Next → Import → wait → publish)
+    Show-UsageStats -RuntimeSeconds $runtimeSec `
+                    -StatsFile      "$env:LOCALAPPDATA\powerplatform-devtools\deploy-stats.json" `
+                    -ManualMinutes  12 `
+                    -ActionLabel    'Solution Import via Maker Portal'
+}
 
 Write-Header "Complete"
 Write-Success "Deployment finished: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
