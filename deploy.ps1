@@ -43,6 +43,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# ── Load run-history module ───────────────────────────────────────────────────
+$script:ModulePath = Join-Path $PSScriptRoot 'run-history.psm1'
+if (Test-Path $script:ModulePath) {
+    Import-Module $script:ModulePath -Force
+} else {
+    Write-Warning "run-history.psm1 not found — previous run history will not be available."
+}
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 function Write-Header([string]$Text) {
@@ -83,6 +91,9 @@ function Get-PacAuthProfiles {
 }
 
 function Select-AuthProfile {
+    <#
+    .OUTPUTS  The selected or created profile name (string), or '' if unknown.
+    #>
     Write-Header "Authentication"
 
     $profiles = Get-PacAuthProfiles
@@ -101,8 +112,10 @@ function Select-AuthProfile {
                 exit 1
             }
             pac auth select --index $selected.Index | Out-Null
+            # Extract just the profile name token from the raw line
+            $profileName = if ($selected.Raw -match '\[\d+\]\s+(\S+)') { $Matches[1] } else { $selected.Raw }
             Write-Success "Auth profile [$($selected.Index)] selected."
-            return
+            return $profileName
         }
     }
     else {
@@ -147,6 +160,7 @@ function Select-AuthProfile {
     else {
         Write-Warn "Could not auto-select new profile. Run 'pac auth list' and select manually."
     }
+    return $profileName
 }
 
 function Format-PacEnvList {
@@ -400,11 +414,73 @@ Write-Host "  ──────────────────────
 $ScriptStartTime = Get-Date   # captured early so total interactive + processing time is recorded
 
 Assert-PacCli
-Select-AuthProfile
-$envId          = Select-Environment
+
+# ── Previous run history ──────────────────────────────────────────────────────
+$authProfile    = ''
+$envId          = ''
+$usedPrevRun    = $false
+
+if (Get-Command 'Get-SavedRunHistory' -ErrorAction SilentlyContinue) {
+    $history = Get-SavedRunHistory -ScriptType 'deploy' -ScriptPath $PSCommandPath
+    if ($history.Count -gt 0) {
+        Write-Host "`n  ℹ  Previous run configurations found." -ForegroundColor Cyan
+        $selected = Select-SavedRun -History $history
+        if ($selected) {
+            $confirmed = Confirm-ReusedRun -Entry $selected -ScriptType 'deploy'
+            if ($confirmed) {
+                # Restore variables from saved entry
+                $authProfile    = $selected.AuthProfile
+                $envId          = $selected.EnvironmentId
+                $SolutionFolder = $selected.SolutionFolder
+                if ($selected.SolutionType -eq 'Managed') { $Managed = $true }
+
+                # Apply saved auth profile selection
+                if ($authProfile) {
+                    $profiles   = Get-PacAuthProfiles
+                    $match      = $profiles | Where-Object { $_.Raw -like "*$authProfile*" }
+                    if ($match) {
+                        pac auth select --index $match.Index | Out-Null
+                        Write-Success "Auth profile '$authProfile' reselected."
+                    } else {
+                        Write-Warn "Saved auth profile '$authProfile' not found — please select manually."
+                        $authProfile = Select-AuthProfile
+                    }
+                }
+
+                # Validate restored solution folder still exists
+                if ($SolutionFolder -and -not (Test-Path $SolutionFolder)) {
+                    Write-Warn "Saved solution folder '$SolutionFolder' no longer exists — please re-enter."
+                    $SolutionFolder = ''
+                }
+
+                $usedPrevRun = $true
+            }
+        }
+    }
+}
+
+# ── Manual input for any values not restored from history ─────────────────────
+if (-not $usedPrevRun -or -not $authProfile) {
+    $authProfile = Select-AuthProfile
+}
+if (-not $usedPrevRun -or -not $envId) {
+    $envId = Select-Environment
+}
 $SolutionFolder = Resolve-SolutionFolder
 Invoke-Pack   -FolderPath $SolutionFolder
 Invoke-Deploy -EnvId $envId
+
+# ── Save successful run to history ────────────────────────────────────────────
+if (Get-Command 'Save-RunHistory' -ErrorAction SilentlyContinue) {
+    $solutionType = if ($Managed) { 'Managed' } else { 'Unmanaged' }
+    Save-RunHistory -ScriptType 'deploy' -ScriptPath $PSCommandPath -Config @{
+        AuthProfile    = $authProfile
+        EnvironmentId  = $envId
+        SolutionFolder = $SolutionFolder
+        SolutionType   = $solutionType
+        OutputZip      = $OutputZip
+    }
+}
 
 # ── Usage stats (runtime captured here so gamification display is excluded from the total) ──
 $runtimeSec = ([datetime]::Now - $ScriptStartTime).TotalSeconds
