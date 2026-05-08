@@ -1,6 +1,6 @@
 # powerplatform-devtools
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-1.2.0-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 Interactive PowerShell scripts for managing Power Platform solution deployments via the PAC CLI. Supports exporting, unpacking, packing, and importing solutions across Commercial, GCC, GCC High, and DoD cloud environments.
 
@@ -14,6 +14,7 @@ This repository contains two standalone PowerShell 7 scripts designed to streaml
 |---|---|
 | `download.ps1` | Export a solution from a source environment and optionally unpack it into a source-control-friendly folder structure |
 | `deploy.ps1` | Pack an unpacked (or raw-export) solution folder into a `.zip` file and import it into a target environment |
+| `run-history.psm1` | Shared module that saves and restores previous run configurations so you can skip re-entering inputs on repeat runs |
 
 Both scripts are fully interactive — they guide you through authentication, environment selection, and all required options at runtime. Parameters are also available for scripted/CI use.
 
@@ -181,6 +182,79 @@ These are conservative estimates for a typical mid-size solution. Complex soluti
 
 ---
 
+## Run History
+
+Both scripts remember your last few configurations so you can skip re-entering inputs on repeat runs.
+
+### How it works
+
+1. On each run, after PAC CLI is verified, the script checks for saved configurations that match the current script and solution path.
+2. If any non-expired entries exist, a numbered menu is displayed:
+   ```
+   [1]  2026-05-08 14:30  (2h ago)
+         Auth Profile  : PPMF-GCCH-Prod
+         Environment   : xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+         Solution      : MySolution
+         Type          : Managed
+   ```
+3. Select a number to reuse that configuration, or press **Enter** to enter details manually.
+4. A confirmation prompt (highlighted in yellow with the Environment ID) must be accepted before execution proceeds.
+5. On successful completion, the run is saved to history for next time.
+
+### Storage
+
+History is stored in a single JSON file:
+
+```
+%LOCALAPPDATA%\powerplatform-devtools\run-history.json
+```
+
+The file is created automatically. It is scoped to the current user's `LOCALAPPDATA` and is never transmitted anywhere.
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `ExpiryHours` | `24` | Hours after which a saved entry will not be offered for reuse |
+| `MaxEntries` | `10` | Maximum entries retained per script/solution scope |
+
+Change settings at any time using the `Set-RunHistorySettings` function from the module:
+
+```powershell
+# Load the module first
+Import-Module .\run-history.psm1
+
+# Change expiry to 8 hours and keep only 5 entries per scope
+Set-RunHistorySettings -ExpiryHours 8 -MaxEntries 5
+```
+
+### Utility functions
+
+| Function | Description |
+|---|---|
+| `Get-SavedRunHistory` | Returns non-expired entries for a given script/solution scope |
+| `Save-RunHistory` | Appends an entry after a successful run (called automatically) |
+| `Select-SavedRun` | Interactive menu to pick a previous configuration |
+| `Confirm-ReusedRun` | Displays a confirmation summary before executing a reused config |
+| `Clear-SavedRunHistory` | Removes history entries — scoped or all |
+| `Set-RunHistorySettings` | Updates `ExpiryHours` and `MaxEntries` |
+
+```powershell
+Import-Module .\run-history.psm1
+
+# Clear history for deploy.ps1 only
+Clear-SavedRunHistory -ScriptType deploy -ScriptPath .\deploy.ps1
+
+# Clear all history for all scripts
+Clear-SavedRunHistory -All
+```
+
+### Expiry recommendation
+
+The default of **24 hours** covers a full working day. For higher-sensitivity environments, reduce this to `4` or `8` hours. One hour is not recommended — it disrupts workflows where multiple deployments are made across a morning session.
+
+---
+
 ### Sovereign Cloud Configuration
 
 Both scripts support sovereign cloud environments via PAC auth profiles. When creating a new profile, select the appropriate cloud:
@@ -256,6 +330,8 @@ All PAC CLI calls use PowerShell's **call operator (`&`) with typed argument arr
 | `Invoke-Deploy` — `pac solution import` | `deploy.ps1` | `& pac @pacArgs` argument array |
 
 > **v1.1.0 fix:** `Invoke-Unpack` (`download.ps1`) and `Invoke-Pack` (`deploy.ps1`) previously used inline splatted arguments for PAC CLI calls with user-supplied paths. Both have been converted to argument arrays to be consistent with the rest of the scripts.
+>
+> **v1.2.0:** `run-history.psm1` does not make any PAC CLI calls directly. All CLI invocations remain in the main scripts and continue to use argument arrays.
 
 ---
 
@@ -267,14 +343,22 @@ All PAC CLI calls use PowerShell's **call operator (`&`) with typed argument arr
 
 ---
 
-### A05 – Usage Stats Storage
+### A05 – Local JSON Storage (Stats & Run History)
 
-The gamification feature writes a small JSON file to `%LOCALAPPDATA%\powerplatform-devtools\`. Key design decisions that limit risk:
+Both the gamification feature and the run-history module write small JSON files to `%LOCALAPPDATA%\powerplatform-devtools\`. Key design decisions that limit risk across all three files:
 
-- **Scope**: Written to the current user's `LOCALAPPDATA`, accessible only to that user account under standard Windows filesystem permissions.
-- **Typed reads**: All values read from the JSON file are immediately cast to typed primitives (`[double]`, `[string]`) before use. A tampered or corrupt file yields reset defaults.
-- **No execution surface**: Stats file contents are never passed to any PAC CLI call, `Invoke-Expression`, or any other execution context.
-- **Non-fatal writes**: All file I/O in `Save-UsageStats` and `Get-UsageStats` is wrapped in `try/catch`. A failure silently resets to defaults and does not affect script behaviour.
+| File | Written by |
+|---|---|
+| `deploy-stats.json` | `deploy.ps1` |
+| `download-stats.json` | `download.ps1` |
+| `run-history.json` | `run-history.psm1` |
+
+- **Scope**: All files are written to the current user's `LOCALAPPDATA`, accessible only to that user account under standard Windows filesystem permissions.
+- **No secrets stored**: `run-history.json` persists only PAC auth profile names (display labels, not tokens), environment IDs (GUIDs), solution names, and file paths. No passwords, OAuth tokens, or credentials are ever written.
+- **Typed reads**: Values read from JSON are immediately cast to typed primitives before use. A tampered or corrupt file yields safe defaults rather than erroring.
+- **No execution surface**: File contents are never passed to `Invoke-Expression`, shell commands, or any PAC CLI call as constructed strings.
+- **Non-fatal writes**: All file I/O is wrapped in `try/catch`. A failure produces a warning and does not affect the deployment or download outcome.
+- **Expiry**: Run history entries expire after `ExpiryHours` (default 24) and are never surfaced to the user after that point. Expired entries are pruned on the next save.
 
 ---
 
