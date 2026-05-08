@@ -45,7 +45,7 @@ pac --version     # any recent version
 **Fully interactive (recommended for first-time use):**
 
 ```powershell
-.\download.ps1
+.\tools\download.ps1
 ```
 
 The script will prompt you to:
@@ -60,13 +60,13 @@ The script will prompt you to:
 
 ```powershell
 # Export only
-.\download.ps1 -SolutionName "MySolution" -OutputZip ".\MySolution.zip"
+.\tools\download.ps1 -SolutionName "MySolution" -OutputZip ".\MySolution.zip"
 
 # Export managed solution
-.\download.ps1 -SolutionName "MySolution" -OutputZip ".\MySolution_managed.zip" -Managed
+.\tools\download.ps1 -SolutionName "MySolution" -OutputZip ".\MySolution_managed.zip" -Managed
 
 # Export and unpack for source control in one step
-.\download.ps1 -SolutionName "MySolution" -OutputZip ".\MySolution.zip" -Unpack
+.\tools\download.ps1 -SolutionName "MySolution" -OutputZip ".\MySolution.zip" -Unpack
 ```
 
 ---
@@ -76,7 +76,7 @@ The script will prompt you to:
 **Fully interactive:**
 
 ```powershell
-.\deploy.ps1
+.\tools\deploy.ps1
 ```
 
 The script will prompt you to:
@@ -90,10 +90,10 @@ The script will prompt you to:
 
 ```powershell
 # Pack from an unpacked folder and deploy
-.\deploy.ps1 -SolutionFolder ".\MySolution"
+.\tools\deploy.ps1 -SolutionFolder ".\MySolution"
 
 # Specify output zip and deploy as managed
-.\deploy.ps1 -SolutionFolder ".\MySolution" -OutputZip ".\MySolution.zip" -Managed
+.\tools\deploy.ps1 -SolutionFolder ".\MySolution" -OutputZip ".\MySolution.zip" -Managed
 ```
 
 ---
@@ -166,7 +166,7 @@ The feature is **enabled by default**. To turn it off:
 
 | Method | How |
 |---|---|
-| **Per-run** | Pass `-NoStats` flag: `.\ download.ps1 -NoStats` |
+| **Per-run** | Pass `-NoStats` flag: `.\tools\download.ps1 -NoStats` |
 | **Permanently (current session)** | `$env:PPDEVTOOLS_NO_STATS = '1'` |
 | **Permanently (all sessions)** | Add `$env:PPDEVTOOLS_NO_STATS = '1'` to your PowerShell profile (`$PROFILE`) |
 | **Remove entirely** | Delete the `# ── Gamification / Usage Statistics ──` block and the 3 lines in `main` that reference `$ScriptStartTime`, `$runtimeSec`, and `Show-UsageStats` |
@@ -222,7 +222,7 @@ Change settings at any time using the `Set-RunHistorySettings` function from the
 
 ```powershell
 # Load the module first
-Import-Module .\run-history.psm1
+Import-Module .\tools\run-history.psm1
 
 # Change expiry to 8 hours and keep only 5 entries per scope
 Set-RunHistorySettings -ExpiryHours 8 -MaxEntries 5
@@ -240,10 +240,10 @@ Set-RunHistorySettings -ExpiryHours 8 -MaxEntries 5
 | `Set-RunHistorySettings` | Updates `ExpiryHours` and `MaxEntries` |
 
 ```powershell
-Import-Module .\run-history.psm1
+Import-Module .\tools\run-history.psm1
 
 # Clear history for deploy.ps1 only
-Clear-SavedRunHistory -ScriptType deploy -ScriptPath .\deploy.ps1
+Clear-SavedRunHistory -ScriptType deploy -ScriptPath .\tools\deploy.ps1
 
 # Clear all history for all scripts
 Clear-SavedRunHistory -All

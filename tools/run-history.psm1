@@ -190,16 +190,16 @@ function Save-RunHistory {
     $maxEntries = [int]$store.Settings.MaxEntries
 
     $newEntry = [PSCustomObject]([ordered]@{
-        ScopeKey     = $key
-        ScriptType   = $ScriptType
-        Timestamp    = (Get-Date).ToUniversalTime().ToString('o')  # ISO 8601 UTC
-        AuthProfile  = [string]($Config.AuthProfile  ?? '')
-        EnvironmentId = [string]($Config.EnvironmentId ?? '')
-        SolutionName = [string]($Config.SolutionName  ?? '')
-        SolutionFolder = [string]($Config.SolutionFolder ?? '')
-        SolutionType  = [string]($Config.SolutionType   ?? '')
-        OutputZip    = [string]($Config.OutputZip    ?? '')
-        Unpack       = [bool]  ($Config.Unpack        ?? $false)
+        ScopeKey       = $key
+        ScriptType     = $ScriptType
+        Timestamp      = (Get-Date).ToUniversalTime().ToString('o')  # ISO 8601 UTC
+        AuthProfile    = [string]$(if ($Config.ContainsKey('AuthProfile'))    { $Config.AuthProfile }    else { '' })
+        EnvironmentId  = [string]$(if ($Config.ContainsKey('EnvironmentId'))  { $Config.EnvironmentId }  else { '' })
+        SolutionName   = [string]$(if ($Config.ContainsKey('SolutionName'))   { $Config.SolutionName }   else { '' })
+        SolutionFolder = [string]$(if ($Config.ContainsKey('SolutionFolder')) { $Config.SolutionFolder } else { '' })
+        SolutionType   = [string]$(if ($Config.ContainsKey('SolutionType'))   { $Config.SolutionType }   else { '' })
+        OutputZip      = [string]$(if ($Config.ContainsKey('OutputZip'))      { $Config.OutputZip }      else { '' })
+        Unpack         = [bool]  $(if ($Config.ContainsKey('Unpack'))         { $Config.Unpack }         else { $false })
     })
 
     # Prepend new entry; keep only MaxEntries for this scope

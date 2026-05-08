@@ -421,7 +421,7 @@ $envId          = ''
 $usedPrevRun    = $false
 
 if (Get-Command 'Get-SavedRunHistory' -ErrorAction SilentlyContinue) {
-    $history = Get-SavedRunHistory -ScriptType 'deploy' -ScriptPath $PSCommandPath
+    $history = @(Get-SavedRunHistory -ScriptType 'deploy' -ScriptPath $PSCommandPath)
     if ($history.Count -gt 0) {
         Write-Host "`n  ℹ  Previous run configurations found." -ForegroundColor Cyan
         $selected = Select-SavedRun -History $history
