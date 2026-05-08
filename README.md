@@ -20,6 +20,40 @@ Both scripts are fully interactive — they guide you through authentication, en
 
 ---
 
+## Installation & Vendoring
+
+### Standalone use (this repo)
+
+Clone the repo and run scripts directly from the `tools/` folder:
+
+```powershell
+git clone https://github.com/your-org/powerplatform-devtools
+cd powerplatform-devtools
+.\tools\deploy.ps1
+```
+
+### Vendoring into a solution repo
+
+If you want to keep the scripts alongside your unpacked solution in a separate repo, copy the `tools/` folder into that repo and add it to `.gitignore` so the scripts are not tracked there:
+
+```
+# In your solution repo's .gitignore
+tools/
+```
+
+Or, if you only want to exclude specific files:
+
+```
+# In your solution repo's .gitignore
+tools/deploy.ps1
+tools/download.ps1
+tools/run-history.psm1
+```
+
+> **Note:** Run history is stored in `%LOCALAPPDATA%\powerplatform-devtools\run-history.json` — never in the repo — so there is nothing from the history feature to gitignore.
+
+---
+
 ## Prerequisites
 
 | Requirement | Details |
