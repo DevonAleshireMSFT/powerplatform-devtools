@@ -6,6 +6,35 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.0] — 2026-05-08
+
+### Added
+
+- **Run history module** — new `run-history.psm1` shared module that saves previous run configurations and offers them for reuse on subsequent runs.
+  - History is scoped by script type, absolute script path, and absolute solution path, preventing cross-project contamination.
+  - Stored in `%LOCALAPPDATA%\powerplatform-devtools\run-history.json` (user-scoped, no secrets stored — profile names, environment IDs, solution names, and file paths only).
+  - Configurable expiry (`ExpiryHours`, default `24`) and entry limit (`MaxEntries`, default `10`) persisted in the JSON settings block.
+  - New public functions: `Get-SavedRunHistory`, `Save-RunHistory`, `Select-SavedRun`, `Confirm-ReusedRun`, `Clear-SavedRunHistory`, `Set-RunHistorySettings`.
+- **Previous run prompt** (`deploy.ps1`, `download.ps1`) — before prompting for inputs, each script checks for saved non-expired configurations and displays a numbered menu for selection.
+- **Confirmation guard** — a highlighted confirmation prompt (with the Environment ID in yellow) must be explicitly accepted before executing a reused configuration. Manual-entry runs do not require a separate confirmation.
+- **Auth profile reselection** — when restoring a saved run, the matching PAC CLI auth profile is automatically reselected by index. Falls back to manual selection if the profile no longer exists.
+- **Solution folder validation** (`deploy.ps1`) — if the saved solution folder path no longer exists on disk, the user is warned and prompted to re-enter it.
+- `run-history.psm1` imported at startup in both scripts; if the file is missing, a warning is shown and the scripts continue without history support.
+
+### Changed
+
+- `Select-AuthProfile` (both scripts) now returns the selected or created profile name so it can be captured for history storage.
+- README updated: version badge bumped to `1.2.0`, `run-history.psm1` added to the Overview table, new **Run History** section (flow, storage, configuration, utility functions, expiry guidance), A03 security note extended, A05 section expanded to cover all three local JSON files.
+
+### Security
+
+- No secrets, tokens, or credentials are stored in `run-history.json`. Only display-level metadata is persisted (PAC auth profile name, environment GUID, solution name, file paths).
+- All history JSON reads use typed casts; a corrupt or tampered file yields safe defaults.
+- History file contents are never passed to `Invoke-Expression`, shell commands, or any PAC CLI call as constructed strings.
+- All existing `& pac @pacArgs` argument-array mitigations preserved; `run-history.psm1` makes no PAC CLI calls directly.
+
+---
+
 ## [1.1.0] — 2026-05-07
 
 ### Added
