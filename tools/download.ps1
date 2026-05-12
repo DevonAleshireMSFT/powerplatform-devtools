@@ -186,7 +186,7 @@ function Format-PacEnvList {
 }
 
 function Format-PacSolutionList {
-    $raw = pac solution list 2>&1
+    $raw = pac solution list --environment $script:envId 2>&1
     $rows = @()
     foreach ($line in $raw) {
         if ($line -match '^\s*([^\t]+?)\s{2,}(\S+)\s{2,}([\d\.]+)\s*$') {
@@ -271,16 +271,19 @@ function Invoke-Export {
 
     # Use the call operator (&) with an argument array instead of Invoke-Expression to
     # prevent command injection from user-supplied names and paths (OWASP A03 – Injection).
-    $pacArgs = @('solution', 'export', '--name', $SolutionName, '--path', $OutputZip, '--overwrite')
+    $pacArgs = @('solution', 'export', '--name', $SolutionName, '--path', $OutputZip, '--overwrite', '--environment', $script:envId)
     if ($solutionType -eq 'Managed') { $pacArgs += '--managed' }
     & pac @pacArgs
 
-    if ($LASTEXITCODE -ne 0) {
+    # Check both exit code and file existence: some pac versions return exit code 0
+    # even when the export fails (e.g. invalid solution name), so a missing zip file
+    # is an additional failure signal.
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $OutputZip)) {
         Write-Fail "pac solution export failed."
         exit 1
     }
 
-    $size = [math]::Round((Get-Item $OutputZip).Length / 1KB, 1)
+    $size = [math]::Round((Get-Item -LiteralPath $OutputZip).Length / 1KB, 1)
     Write-Success "Exported: $OutputZip ($size KB, $solutionType)"
 }
 
@@ -289,7 +292,7 @@ function Invoke-Unpack {
 
     # Derive default unpack folder from the zip name (strip .zip extension)
     $defaultFolder = [System.IO.Path]::Combine(
-        [System.IO.Path]::GetDirectoryName((Resolve-Path $OutputZip)),
+        [System.IO.Path]::GetDirectoryName((Resolve-Path -LiteralPath $OutputZip)),
         [System.IO.Path]::GetFileNameWithoutExtension($OutputZip)
     )
 
